@@ -1,0 +1,52 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Check out the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Get the runner's public IP address
+    - name: Get runner IP
+      id: get-ip
+      run: |
+        echo "runner_ip=$(curl -s ifconfig.me)" >> $GITHUB_ENV
+
+    # Step 3: Add the IP to the security group
+    - name: Add IP to Security Group
+      env:
+        RUNNER_IP: ${{ env.runner_ip }}
+      run: |
+        aws ec2 authorize-security-group-ingress \
+          --group-id sg-07c5376a7241e15ea \
+          --protocol tcp \
+          --port 22 \
+          --cidr $RUNNER_IP/32
+
+    # Step 4: Deploy the application
+    - name: Deploy LAMP application
+      env:
+        EC2_IP: 172.20.1.193
+        PEM_FILE: ${{ secrets.in }}
+      run: |
+        scp -i $PEM_FILE -r ./* ubuntu@$EC2_IP:/var/www/html
+        ssh -i $PEM_FILE ubuntu@$EC2_IP 'sudo systemctl restart apache2'
+
+    # Step 5: Remove IP from Security Group
+    - name: Remove IP from Security Group
+      env:
+        RUNNER_IP: ${{ env.runner_ip }}
+      run: |
+        aws ec2 revoke-security-group-ingress \
+          --group-id sg-07c5376a7241e15ea \
+          --protocol tcp \
+          --port 22 \
+          --cidr $RUNNER_IP/32
