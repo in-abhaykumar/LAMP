@@ -8,7 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     env:
       SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
       EC2_IP: ${{ secrets.EC2_IP }}
