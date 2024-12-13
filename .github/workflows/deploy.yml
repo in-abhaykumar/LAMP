@@ -10,57 +10,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Create PEM file
-    - name: Create PEM file
-      run: |
-        echo "${{ secrets.IN }}" > key.pem
-        chmod 600 key.pem
+      # Step 1: Create PEM file
+      - name: Create PEM file
+        run: |
+          echo "${{ secrets.IN }}" > key.pem
+          chmod 600 key.pem
 
-    # Step 2: Check out the repository
-    - name: Checkout code
-      uses: actions/checkout@v3
+      # Step 2: Check out the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # Step 3: Configure AWS Credentials
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ap-south-1
+      # Step 3: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
 
-    # Step 4: Get the runner's public IP address
-    - name: Get runner IP
-      id: get-ip
-      run: |
-        echo "runner_ip=$(curl -s ifconfig.me)" >> $GITHUB_ENV
+      # Step 4: Get the runner's public IP address
+      - name: Get runner IP
+        id: get-ip
+        run: |
+          echo "runner_ip=$(curl -s ifconfig.me)" >> $GITHUB_ENV
+        continue-on-error: false
 
-    # Step 5: Add the IP to the security group
-    - name: Add IP to Security Group
-      env:
-        RUNNER_IP: ${{ env.runner_ip }}
-      run: |
-        aws ec2 authorize-security-group-ingress \
-          --group-id sg-07c5376a7241e15ea \
-          --protocol tcp \
-          --port 22 \
-          --cidr $RUNNER_IP/32
+      # Step 5: Add the IP to the security group
+      - name: Add IP to Security Group
+        env:
+          RUNNER_IP: ${{ env.runner_ip }}
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id sg-07c5376a7241e15ea \
+            --protocol tcp \
+            --port 22 \
+            --cidr $RUNNER_IP/32
 
-    # Step 6: Deploy the application
-    - name: Deploy LAMP application
-      env:
-        EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
-      run: |
-        scp -i key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
-        ssh -i key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
+      # Step 6: Deploy the application
+      - name: Deploy LAMP application
+        env:
+          EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
+        run: |
+          scp -i key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
+          ssh -i key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
 
-    # Step 7: Remove IP from Security Group
-    - name: Remove IP from Security Group
-      env:
-        RUNNER_IP: ${{ env.runner_ip }}
-      run: |
-        aws ec2 revoke-security-group-ingress \
-          --group-id sg-07c5376a7241e15ea \
-          --protocol tcp \
-          --port 22 \
-          --cidr $RUNNER_IP/32
-
+      # Step 7: Remove IP from Security Group
+      - name: Remove IP from Security Group
+        env:
+          RUNNER_IP: ${{ env.runner_ip }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id sg-07c5376a7241e15ea \
+            --protocol tcp \
+            --port 22 \
+            --cidr $RUNNER_IP/32
