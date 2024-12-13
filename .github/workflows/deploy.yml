@@ -14,43 +14,47 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    # Step 2: Get the runner's public IP address
+    # Step 2: Configure AWS Credentials
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+
+    # Step 3: Get the runner's public IP address
     - name: Get runner IP
       id: get-ip
       run: |
         echo "runner_ip=$(curl -s ifconfig.me)" >> $GITHUB_ENV
 
-    # Step 3: Add the IP to the security group
+    # Step 4: Add the IP to the security group
     - name: Add IP to Security Group
       env:
         RUNNER_IP: ${{ env.runner_ip }}
-        AWS_REGION: ap-south-1 
       run: |
         aws ec2 authorize-security-group-ingress \
           --group-id sg-07c5376a7241e15ea \
           --protocol tcp \
           --port 22 \
           --cidr $RUNNER_IP/32
-          --region $AWS_REGION
 
-    # Step 4: Deploy the application
+    # Step 5: Deploy the application
     - name: Deploy LAMP application
       env:
-        EC2_IP: 172.20.1.193
-        PEM_FILE: ${{ secrets.in }}
+        EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
+        PEM_FILE: ${{ secrets.IN }}
       run: |
         scp -i $PEM_FILE -r ./* ubuntu@$EC2_IP:/var/www/html
         ssh -i $PEM_FILE ubuntu@$EC2_IP 'sudo systemctl restart apache2'
 
-    # Step 5: Remove IP from Security Group
+    # Step 6: Remove IP from Security Group
     - name: Remove IP from Security Group
       env:
         RUNNER_IP: ${{ env.runner_ip }}
-        AWS_REGION: ap-south-1 
       run: |
         aws ec2 revoke-security-group-ingress \
           --group-id sg-07c5376a7241e15ea \
           --protocol tcp \
           --port 22 \
           --cidr $RUNNER_IP/32
-          --region $AWS_REGION
