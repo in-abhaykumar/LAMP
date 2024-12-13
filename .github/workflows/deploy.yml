@@ -1,7 +1,6 @@
 name: Deploy to EC2
 
 on:
-  workflow_dispatch:   
   push:
     branches:
       - master
@@ -10,36 +9,50 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      SSH_PRIVATE_KEY: ${{ secrets.IN }} # Your private key secret
-      EC2_IP: ${{ secrets.EC2_PRIVATE_IP }} # Your EC2 private IP
-      EC2_SECURITY_GROUP_ID: sg-07c5376a7241e15ea # Your EC2 security group ID
-      ASG_NAME: ${{ secrets.ASG_NAME }} # If applicable, use your ASG name secret
-      LOAD_BALANCER_URL: ${{ secrets.LOAD_BALANCER_URL }} # If applicable, use your Load Balancer URL secret
-
     steps:
-      # Step 1: Checkout repository
-      - name: Checkout repository
+      # Step 1: Create PEM file
+      - name: Create PEM file
+        run: |
+          echo "${{ secrets.IN }}" > $GITHUB_WORKSPACE/key.pem
+          chmod 600 $GITHUB_WORKSPACE/key.pem
+          echo "PEM file created successfully at $GITHUB_WORKSPACE/key.pem"
+          ls -l $GITHUB_WORKSPACE/key.pem
+
+      # Step 2: Verify PEM File Before Deployment
+      - name: Verify PEM File
+        run: |
+          echo "Verifying key.pem file..."
+          ls -l $GITHUB_WORKSPACE/key.pem || echo "key.pem not found!"
+          cat $GITHUB_WORKSPACE/key.pem || echo "Unable to display key.pem content!"
+
+      # Step 3: Set PEM File Path
+      - name: Set PEM File Path
+        run: echo "PEM_FILE=$GITHUB_WORKSPACE/key.pem" >> $GITHUB_ENV
+
+      # Step 4: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up AWS CLI
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v1
+      # Step 5: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1 # Your AWS region
+          aws-region: ap-south-1
 
-      # Step 3: Get GitHub Actions Runner IP
-      - name: Get GitHub Actions Runner IP
-        id: get_ip
+      # Step 6: Get Runner IP
+      - name: Get Runner IP
+        id: get-ip
         run: |
-          RUNNER_IP=$(curl -s https://api.ipify.org)
-          echo "RUNNER_IP=$RUNNER_IP" >> $GITHUB_ENV
-          echo "GitHub runner IP: $RUNNER_IP"
+          RUNNER_IP=$(curl -s ifconfig.me)
+          echo "Runner's Public IP Address: $RUNNER_IP"
+          echo "runner_ip=$RUNNER_IP" >> $GITHUB_ENV
 
-      # Step 4: Add GitHub Actions Runner IP to EC2 Security Group
-      - name: Add GitHub Actions Runner IP to EC2 Security Group
+      # Step 7: Add Runner IP to Security Group
+      - name: Add Runner IP to Security Group
+        env:
+          RUNNER_IP: ${{ env.runner_ip }}
         run: |
           aws ec2 authorize-security-group-ingress \
             --group-id sg-07c5376a7241e15ea \
@@ -47,8 +60,21 @@ jobs:
             --port 22 \
             --cidr $RUNNER_IP/32
 
-      # Step 5: Add EC2 host to known hosts
-      - name: Add EC2 host to known hosts
+      # Step 8: Deploy the Application
+      - name: Deploy LAMP Application
+        env:
+          EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.EC2_PRIVATE_IP }} >> ~/.ssh/known_hosts
+          scp -i ${{ env.PEM_FILE }} -r ./* ubuntu@$EC2_IP:/var/www/html
+          ssh -i ${{ env.PEM_FILE }} ubuntu@$EC2_IP 'sudo systemctl restart apache2'
+
+      # Step 9: Remove Runner IP from Security Group
+      - name: Remove Runner IP from Security Group
+        env:
+          RUNNER_IP: ${{ env.runner_ip }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id sg-07c5376a7241e15ea \
+            --protocol tcp \
+            --port 22 \
+            --cidr $RUNNER_IP/32
