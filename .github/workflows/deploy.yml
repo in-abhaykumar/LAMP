@@ -17,6 +17,7 @@ jobs:
           chmod 600 key.pem
           echo "PEM file created. Contents:"
           ls -l key.pem
+          pwd
 
       # Step 2: Check out the repository
       - name: Checkout code
