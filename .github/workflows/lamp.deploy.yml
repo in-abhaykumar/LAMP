@@ -1,0 +1,55 @@
+name: Deploy to EC2
+ 
+on:
+  push:
+    branches:
+      - master
+ 
+jobs:
+deploy:
+    runs-on: ubuntu-latest
+ 
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_IP: ${{ secrets.EC2_IP }}
+      EC2_SECURITY_GROUP_ID: ${{ secrets.EC2_SECURITY_GROUP_ID }}
+ 
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+ 
+    - name: Set up AWS CLI
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}    
+ 
+    - name: Get GitHub Actions Runner IP
+      id: get_ip
+      run: |
+        RUNNER_IP=$(curl -s https://api.ipify.org)
+        echo "RUNNER_IP=$RUNNER_IP" >> $GITHUB_ENV
+        echo "GitHub runner IP: $RUNNER_IP"    
+ 
+    - name: Add GitHub Actions Runner IP to EC2 Security Group
+      run: |
+        aws ec2 authorize-security-group-ingress --group-id $EC2_SECURITY_GROUP_ID --protocol tcp --port 22 --cidr $RUNNER_IP/32    
+ 
+    - name: Add EC2 host to known hosts
+      env:
+        EC2_IP: ${{ secrets.EC2_IP }}
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts
+ 
+    - name: Copy files to EC2
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        rsync -avz --exclude='.git' . ubuntu@$EC2_IP:/var/www/
+ 
+    - name: Remove GitHub Actions Runner IP from EC2 Security Group
+      run: |
+        aws ec2 revoke-security-group-ingress --group-id $EC2_SECURITY_GROUP_ID --protocol tcp --port 22 --cidr $RUNNER_IP/32
