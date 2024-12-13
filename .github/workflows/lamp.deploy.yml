@@ -34,7 +34,21 @@ jobs:
 
       - name: Add GitHub Actions Runner IP to EC2 Security Group
         run: |
-          aws ec2 authorize-security-group-ingress --group-id $EC2_SECURITY_GROUP_ID --protocol tcp --port 22 --cidr $RUNNER_IP/32
+          EXISTING_RULE=$(aws ec2 describe-security-groups \
+              --group-id "$EC2_SECURITY_GROUP_ID" \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`22\` && ToPort==\`22\` && IpProtocol==\`tcp\` && IpRanges[?CidrIp==\`$RUNNER_IP/32\`]].IpRanges[].CidrIp" \
+              --output text)
+
+          if [ "$EXISTING_RULE" == "$RUNNER_IP/32" ]; then
+              echo "Security group rule for $RUNNER_IP/32 already exists. Skipping..."
+          else
+              echo "Adding security group rule for $RUNNER_IP/32..."
+              aws ec2 authorize-security-group-ingress \
+                  --group-id "$EC2_SECURITY_GROUP_ID" \
+                  --protocol tcp \
+                  --port 22 \
+                  --cidr "$RUNNER_IP/32"
+          fi
 
       - name: Add EC2 host to known hosts
         env:
@@ -52,4 +66,18 @@ jobs:
 
       - name: Remove GitHub Actions Runner IP from EC2 Security Group
         run: |
-          aws ec2 revoke-security-group-ingress --group-id $EC2_SECURITY_GROUP_ID --protocol tcp --port 22 --cidr $RUNNER_IP/32
+          EXISTING_RULE=$(aws ec2 describe-security-groups \
+              --group-id "$EC2_SECURITY_GROUP_ID" \
+              --query "SecurityGroups[0].IpPermissions[?FromPort==\`22\` && ToPort==\`22\` && IpProtocol==\`tcp\` && IpRanges[?CidrIp==\`$RUNNER_IP/32\`]].IpRanges[].CidrIp" \
+              --output text)
+
+          if [ "$EXISTING_RULE" == "$RUNNER_IP/32" ]; then
+              echo "Removing security group rule for $RUNNER_IP/32..."
+              aws ec2 revoke-security-group-ingress \
+                  --group-id "$EC2_SECURITY_GROUP_ID" \
+                  --protocol tcp \
+                  --port 22 \
+                  --cidr "$RUNNER_IP/32"
+          else
+              echo "Security group rule for $RUNNER_IP/32 not found. Skipping removal..."
+          fi
