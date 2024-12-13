@@ -15,7 +15,7 @@ jobs:
         run: |
           echo "${{ secrets.IN }}" > key.pem
           chmod 600 key.pem
-          echo "PEM file created. Contents:"
+          echo "PEM file created. Location:"
           ls -l key.pem
           pwd
 
@@ -51,16 +51,20 @@ jobs:
             --port 22 \
             --cidr $RUNNER_IP/32
 
-      # Step 6: Deploy the application
+      # Step 6: Wait for Security Group Update
+      - name: Wait for Security Group Update
+        run: sleep 10
+
+      # Step 7: Deploy the application
       - name: Deploy LAMP application
         env:
           EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
         run: |
           echo "Deploying application to EC2 instance at $EC2_IP..."
-          scp -i key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
-          ssh -i key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
+          scp -i $GITHUB_WORKSPACE/key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
+          ssh -i $GITHUB_WORKSPACE/key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
 
-      # Step 7: Remove IP from Security Group
+      # Step 8: Remove IP from Security Group
       - name: Remove IP from Security Group
         env:
           RUNNER_IP: ${{ env.runner_ip }}
