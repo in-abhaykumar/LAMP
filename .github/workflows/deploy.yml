@@ -1,6 +1,7 @@
 name: Deploy to EC2
 
 on:
+  workflow_dispatch:   
   push:
     branches:
       - master
@@ -9,75 +10,45 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    steps:
-      # Step 1: Create PEM file
-      - name: Create PEM file
-        run: |
-          echo "${{ secrets.IN }}" > $GITHUB_WORKSPACE/key.pem
-          chmod 600 $GITHUB_WORKSPACE/key.pem
-          echo "PEM file created at $GITHUB_WORKSPACE/key.pem"
-          ls -l $GITHUB_WORKSPACE/key.pem
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.IN }} # Your private key secret
+      EC2_IP: ${{ secrets.EC2_PRIVATE_IP }} # Your EC2 private IP
+      EC2_SECURITY_GROUP_ID: sg-07c5376a7241e15ea # Your EC2 security group ID
+      ASG_NAME: ${{ secrets.ASG_NAME }} # If applicable, use your ASG name secret
+      LOAD_BALANCER_URL: ${{ secrets.LOAD_BALANCER_URL }} # If applicable, use your Load Balancer URL secret
 
-      # Step 2: Check out the repository
-      - name: Checkout code
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 3: Configure AWS Credentials
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      # Step 2: Set up AWS CLI
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ap-south-1 # Your AWS region
 
-      # Step 4: Get the runner's public IP address
-      - name: Get Runner IP
-        id: get-ip
+      # Step 3: Get GitHub Actions Runner IP
+      - name: Get GitHub Actions Runner IP
+        id: get_ip
         run: |
-          RUNNER_IP=$(curl -s ifconfig.me)
-          echo "Runner's Public IP Address: $RUNNER_IP"
-          echo "runner_ip=$RUNNER_IP" >> $GITHUB_ENV
+          RUNNER_IP=$(curl -s https://api.ipify.org)
+          echo "RUNNER_IP=$RUNNER_IP" >> $GITHUB_ENV
+          echo "GitHub runner IP: $RUNNER_IP"
 
-      # Step 5: Add the IP to the security group
-      - name: Add IP to Security Group
-        env:
-          RUNNER_IP: ${{ env.runner_ip }}
+      # Step 4: Add GitHub Actions Runner IP to EC2 Security Group
+      - name: Add GitHub Actions Runner IP to EC2 Security Group
         run: |
-          echo "Adding runner IP ($RUNNER_IP) to security group..."
           aws ec2 authorize-security-group-ingress \
             --group-id sg-07c5376a7241e15ea \
             --protocol tcp \
             --port 22 \
             --cidr $RUNNER_IP/32
 
-      # Step 6: Wait for Security Group Update
-      - name: Wait for Security Group Update
-        run: sleep 10
-
-      # Step 7: Verify PEM File Before Deployment
-      - name: Verify PEM File Before Deployment
+      # Step 5: Add EC2 host to known hosts
+      - name: Add EC2 host to known hosts
         run: |
-          echo "Checking key.pem before deployment..."
-          ls -l $GITHUB_WORKSPACE/key.pem || echo "key.pem not found!"
-          cat $GITHUB_WORKSPACE/key.pem || echo "key.pem content unavailable!"
-
-      # Step 8: Deploy the application
-      - name: Deploy LAMP application
-        env:
-          EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
-        run: |
-          echo "Deploying application to EC2 instance at $EC2_IP..."
-          scp -i $GITHUB_WORKSPACE/key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
-          ssh -i $GITHUB_WORKSPACE/key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
-
-      # Step 9: Remove IP from Security Group
-      - name: Remove IP from Security Group
-        env:
-          RUNNER_IP: ${{ env.runner_ip }}
-        run: |
-          echo "Removing runner IP ($RUNNER_IP) from security group..."
-          aws ec2 revoke-security-group-ingress \
-            --group-id sg-07c5376a7241e15ea \
-            --protocol tcp \
-            --port 22 \
-            --cidr $RUNNER_IP/32
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_PRIVATE_IP }} >> ~/.ssh/known_hosts
