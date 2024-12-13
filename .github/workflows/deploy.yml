@@ -24,12 +24,14 @@ jobs:
     - name: Add IP to Security Group
       env:
         RUNNER_IP: ${{ env.runner_ip }}
+        AWS_REGION: ap-south-1 
       run: |
         aws ec2 authorize-security-group-ingress \
           --group-id sg-07c5376a7241e15ea \
           --protocol tcp \
           --port 22 \
           --cidr $RUNNER_IP/32
+          --region $AWS_REGION
 
     # Step 4: Deploy the application
     - name: Deploy LAMP application
@@ -44,9 +46,11 @@ jobs:
     - name: Remove IP from Security Group
       env:
         RUNNER_IP: ${{ env.runner_ip }}
+        AWS_REGION: ap-south-1 
       run: |
         aws ec2 revoke-security-group-ingress \
           --group-id sg-07c5376a7241e15ea \
           --protocol tcp \
           --port 22 \
           --cidr $RUNNER_IP/32
+          --region $AWS_REGION
