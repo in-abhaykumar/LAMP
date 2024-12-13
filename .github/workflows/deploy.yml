@@ -10,11 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Check out the repository
+    # Step 1: Create PEM file
+    - name: Create PEM file
+      run: |
+        echo "${{ secrets.IN }}" > key.pem
+        chmod 600 key.pem
+
+    # Step 2: Check out the repository
     - name: Checkout code
       uses: actions/checkout@v3
 
-    # Step 2: Configure AWS Credentials
+    # Step 3: Configure AWS Credentials
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -22,13 +28,13 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ap-south-1
 
-    # Step 3: Get the runner's public IP address
+    # Step 4: Get the runner's public IP address
     - name: Get runner IP
       id: get-ip
       run: |
         echo "runner_ip=$(curl -s ifconfig.me)" >> $GITHUB_ENV
 
-    # Step 4: Add the IP to the security group
+    # Step 5: Add the IP to the security group
     - name: Add IP to Security Group
       env:
         RUNNER_IP: ${{ env.runner_ip }}
@@ -39,16 +45,15 @@ jobs:
           --port 22 \
           --cidr $RUNNER_IP/32
 
-    # Step 5: Deploy the application
+    # Step 6: Deploy the application
     - name: Deploy LAMP application
       env:
         EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
-        PEM_FILE: ${{ secrets.IN }}
       run: |
-        scp -i $PEM_FILE -r ./* ubuntu@$EC2_IP:/var/www/html
-        ssh -i $PEM_FILE ubuntu@$EC2_IP 'sudo systemctl restart apache2'
+        scp -i key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
+        ssh -i key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
 
-    # Step 6: Remove IP from Security Group
+    # Step 7: Remove IP from Security Group
     - name: Remove IP from Security Group
       env:
         RUNNER_IP: ${{ env.runner_ip }}
@@ -58,3 +63,4 @@ jobs:
           --protocol tcp \
           --port 22 \
           --cidr $RUNNER_IP/32
+
