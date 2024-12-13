@@ -29,17 +29,19 @@ jobs:
           aws-region: ap-south-1
 
       # Step 4: Get the runner's public IP address
-      - name: Get runner IP
+      - name: Get Runner IP
         id: get-ip
         run: |
-          echo "runner_ip=$(curl -s ifconfig.me)" >> $GITHUB_ENV
-        continue-on-error: false
+          RUNNER_IP=$(curl -s ifconfig.me)
+          echo "Runner's Public IP Address: $RUNNER_IP"
+          echo "runner_ip=$RUNNER_IP" >> $GITHUB_ENV
 
       # Step 5: Add the IP to the security group
       - name: Add IP to Security Group
         env:
           RUNNER_IP: ${{ env.runner_ip }}
         run: |
+          echo "Adding runner IP ($RUNNER_IP) to security group..."
           aws ec2 authorize-security-group-ingress \
             --group-id sg-07c5376a7241e15ea \
             --protocol tcp \
@@ -51,6 +53,7 @@ jobs:
         env:
           EC2_IP: ${{ secrets.EC2_PRIVATE_IP }}
         run: |
+          echo "Deploying application to EC2 instance at $EC2_IP..."
           scp -i key.pem -r ./* ubuntu@$EC2_IP:/var/www/html
           ssh -i key.pem ubuntu@$EC2_IP 'sudo systemctl restart apache2'
 
@@ -59,6 +62,7 @@ jobs:
         env:
           RUNNER_IP: ${{ env.runner_ip }}
         run: |
+          echo "Removing runner IP ($RUNNER_IP) from security group..."
           aws ec2 revoke-security-group-ingress \
             --group-id sg-07c5376a7241e15ea \
             --protocol tcp \
